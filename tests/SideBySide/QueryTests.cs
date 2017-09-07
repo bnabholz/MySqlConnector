@@ -795,6 +795,74 @@ insert into long_enum_test (id, value) VALUES (0x7FFFFFFFFFFFFFFF, 1);
 			}
 		}
 
+		[Fact]
+		public void JoinWithComments()
+		{
+			m_database.Connection.Execute(@"
+drop table if exists Configuration;
+drop table if exists User;
+
+create table User (
+	Id bigint not null auto_increment primary key,
+	FirstName varchar(100),
+	LastName varchar(100)
+);
+
+create table Configuration (
+	Id bigint not null auto_increment primary key,
+	Name varchar(100),
+	Description varchar(200),
+	Value int,
+	CreatedOn datetime(6),
+	ModifiedOn datetime(6),
+	CreatedBy bigint,
+	ModifiedBy bigint,
+	StateCode int,
+	constraint foreign key FK_Configuration_CreatedBy(CreatedBy) references User(Id),
+	constraint foreign key FK_Configuration_ModifiedBy(ModifiedBy) references User(Id)
+);
+
+insert into User(FirstName, LastName) values
+('Bob', 'Smith'),
+('Anne', 'Jones');
+
+insert into Configuration(Name, Value, CreatedOn, ModifiedOn, CreatedBy, ModifiedBy, StateCode) values
+('Test 1', 1, '2000-01-01 00:00:00', NULL, 1, NULL, 0),
+('Test 2', 2, '2001-01-01 00:00:00', utc_timestamp(6), 2, 1, 1);");
+
+			using (var cmd = m_database.Connection.CreateCommand())
+			{
+				cmd.CommandText = @"SELECT
+					c.Id,
+					c.Name,
+					c.Description,
+					c.Value,
+					c.CreatedOn,
+					-- c.ModifiedOn,
+					-- c.CreatedBy,
+					c.ModifiedBy,
+					c.StateCode,
+					uc.FirstName AS CreatedByName,
+					um.FirstName AS ModifiedByName
+				FROM Configuration c
+					LEFT JOIN User uc on c.CreatedBy = uc.Id
+					LEFT JOIN User um on c.ModifiedBy = um.Id
+				WHERE c.Id = @configurationId
+					AND c.StateCode = 0";
+				cmd.Parameters.AddWithValue("configurationId", 1);
+
+				using (var reader = cmd.ExecuteReader())
+				{
+					Assert.True(reader.Read());
+					Assert.Equal(1L, reader.GetInt64(0));
+					Assert.Equal("Test 1", reader.GetString(1));
+					Assert.Equal("Bob", reader.GetString(7));
+					Assert.True(reader.IsDBNull(8));
+					Assert.False(reader.Read());
+				}
+			}
+		}
+
 		class BoolTest
 		{
 			public int Id { get; set; }
